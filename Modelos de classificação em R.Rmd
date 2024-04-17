@@ -1,0 +1,189 @@
+---
+title: "Lista02"
+output: html_notebook
+---
+
+Para esse exercício será utilizado os dados referentes a um estudo de caso-controle realizado no Setor de Anatomia e Patologia do Hospital Heliópolis em São Paulo, no período de 1970 a 1982 (canc3.csv).
+
+Um total de 175 pacientes com processo infecioso pulmonar atendido no hospital no período acima foi classificado segundo as seguintes variáveis: tipo, tipo de tumor (1: maligno, 0: benigno); IDADE, idade em anos; SEXO (0:masculino, 1: feminino); HL, intensidade da célula histócitos-linfócitos (1:ausente, 2: discreta, 3: moderada, 4: intensa) e FF, intensidade da célula fibrose-frouxa (1:ausente, 2: discreta, 3: moderada, 4: intensa).
+
+1.Faça inicialmente uma análise descritiva dos dados.
+
+1. Faça um modelo de regressão logística.
+
+1. Faça um modelo usando árvore de decisão.
+
+1. Compare os dois modelos usando a métrica mais apropriada.
+
+
+```{r, results='hide'}
+if(!require(tidyverse)){install.packages("tidyverse"); library(tidyverse);} #Pacote básico para analise de dados
+if(!require(GGally)){install.packages("GGally"); library(GGally);} #Pacore para Pair Ploting
+if(!require(qcc)){install.packages("qcc"); library(qcc);} #Pacote para o pareto chart
+if(!require(caret)){install.packages("caret"); library(caret);} #Pacote para o Split
+if(!require(ggpubr)){install.packages("ggpubr"); library(ggpubr);}
+if(!require(rpart)){install.packages("rpart"); library(rpart);}
+if(!require(rpart.plot)){install.packages("rpart.plot"); library(rpart.plot);}
+```
+
+```{r}
+
+
+setwd("C:/Users/kvdvi/Documents/R/databases")
+dados <- read_csv2("canc3.csv")
+head(dados)
+```
+# A) Analise descritiva dos dados
+
+```{r}
+cat('Numero de linhas:',  nrow(dados), '\n')
+cat("Numero de colunas:", ncol(dados), '\n')
+
+## validando se existe nulos
+
+cat("Quantidade de nulos:", sum(is.na(dados)), '\n')
+
+cat("Colunas:", colnames(dados), '\n')
+
+
+
+## validando principais medidas estatisticas
+describe(dados)
+```
+# Plotando histogramas para ajudar na analise do dataset
+
+```{r}
+ggplot(dados, aes(x = idade)) + 
+  geom_histogram(binwidth = 3, fill="purple", color="black") + 
+  ggtitle("Distribuição da Idade")
+```
+
+```{r}
+ggplot(dados, aes(x = sexo)) + 
+  geom_bar(fill="purple", color="black") +
+  ggtitle("Distribuição do sexo")
+```
+
+```{r}
+ggplot(dados, aes(x = hl)) + 
+  geom_bar(fill="purple", color="black") +
+  ggtitle("Distribuição da HL")
+```
+```{r}
+ggplot(dados, aes(x = ff)) + 
+  geom_bar(fill="purple", color="black") +
+  ggtitle("Distribuição da ff")
+```
+
+```{r}
+ggplot(dados, aes(x = tipo)) + 
+  geom_bar(fill="purple", color="black") +
+  ggtitle("Distribuição do tipo")
+```
+## Analisando os graficos:
+
+ - Tipo de Tumor: A maioria dos casos são de tumores benignos (tipo 0).
+ - Idade: A distribuição da idade é aproximadamente simétrica, com uma ligeira inclinação para idades mais jovens.
+ - Sexo: Há mais indivíduos do sexo feminino (1) do que do sexo masculino (0) no conjunto de dados.
+ - Intensidade de Histócitos-Linfócitos (HL): A maioria dos casos tem uma intensidade moderada de células histiócitos-linfócitos (HL = 3).
+ - Intensidade de Fibrose-Frouxa (FF): A maioria dos casos tem uma intensidade baixa a moderada de células fibrose-frouxa (FF = 1 ou 2).
+
+
+```{r}
+bplot_idade = ggplot(dados, aes(y = idade)) + 
+  geom_boxplot(fill = "purple", color="black") +
+  theme_minimal() +
+  ggtitle("Boxplot da Idade")
+
+
+bplot_sexo = ggplot(dados, aes(y = sexo)) + 
+  geom_boxplot(fill = "purple", color="black") +
+  theme_minimal() +
+  ggtitle("Boxplot sexo")
+
+
+bplot_hl = ggplot(dados, aes(y = hl)) + 
+  geom_boxplot(fill = "purple", color="black") +
+  theme_minimal() +
+  ggtitle("Boxplot da hl")
+
+
+bplot_ff = ggplot(dados, aes(y = ff)) + 
+  geom_boxplot(fill = "purple", color="black") +
+  theme_minimal() +
+  ggtitle("Boxplot ff")
+
+bplot_tipo = ggplot(dados, aes(y = tipo)) + 
+  geom_boxplot(fill = "purple", color="black") +
+  theme_minimal() +
+  ggtitle("Boxplot tipo")
+
+ggarrange(bplot_idade, bplot_sexo, bplot_hl, bplot_ff, bplot_tipo)
+```
+
+## Analise dos boxplot
+
+ - Idade: A idade tem uma distribuição relativamente simétrica, com alguns outliers nas extremidades inferiores.
+ - Intensidade de Histócitos-Linfócitos (HL): A maioria dos valores está concentrada nas categorias 2 e 3, com alguns casos nas categorias 1 e 4.
+ - Intensidade de Fibrose-Frouxa (FF): Similar à variável HL, a maioria dos valores está concentrada nas categorias 1 e 2, com alguns casos nas categorias 3 e 4.
+ - Tipo de Tumor: A variável é binária, indicando se o tumor é maligno ou benigno.
+
+#B-) Construindo o Modelo de Regressão Logística
+
+```{r}
+set.seed(42)
+trainTestPartition <- createDataPartition(dados$tipo, p = .8, 
+                                  list = FALSE, 
+                                  times = 1)
+train <- dados[ trainTestPartition,]
+test  <- dados[-trainTestPartition,]
+```
+
+```{r}
+modelo_logistico <- glm(tipo ~ ., data = train, family = binomial)
+```
+
+```{r}
+prev_logistica_y  <- predict(modelo_logistico, test, type = "response")
+prev_logistica_y <- ifelse(prev_logistica_y > 0.5, 1, 0)
+```
+
+```{r}
+confusionMatrix(as.factor(prev_logistica_y), as.factor(test$tipo))
+```
+
+**Acurácia:** O modelo tem uma acurácia de aproximadamente 71.43%.
+
+#C-) Construindo modelo de árvore de decisão
+
+
+```{r}
+modelo_arvore <- rpart(tipo ~ ., data = train, method = "class")
+rpart.plot(modelo_arvore)
+```
+```{r}
+prp(modelo_arvore, branch.type = 5, yesno = FALSE, faclen = 0)
+```
+```{r}
+previ_arvore_y <- predict(modelo_arvore, test, type = "class")
+confusionMatrix(previ_arvore_y, as.factor(test$tipo))
+```
+#D-) Comparando os modelos utilizando a métrica MSE
+
+```{r}
+
+y_treino <- train$tipo
+
+mse_regressao <- mean((y_treino - prev_logistica_y)^2)
+
+mse_arvore <- mean((y_treino - as.numeric(previ_arvore_y))^2)
+
+
+cat('\nMSE para Regressão Logística: ', mse_regressao)
+cat('\nMSE para Árvore de decisão: ', mse_arvore, '\n')
+
+print('De acordo com a métrica MSE, o modelo mais indicado para o caso é o modelo de Regressão Logística')
+
+
+```
+
